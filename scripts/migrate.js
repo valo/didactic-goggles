@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable no-console */
 import 'dotenv/config';
 import fs from 'fs/promises';
 import path from 'path';

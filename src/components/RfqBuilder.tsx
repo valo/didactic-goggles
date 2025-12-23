@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -39,11 +39,6 @@ interface FormState {
   expiryDuration: string; // seconds offset
   oracleAdapter: string;
   oracleData: string;
-  refiEnabled: boolean;
-  refiAdapter: string;
-  refiGracePeriod: string;
-  refiMaxLtvBps: string;
-  refiAdapterData: string;
   label: string;
   notes: string;
   editableTerms: boolean;
@@ -59,18 +54,16 @@ const initialState: FormState = {
   expiryDuration: '',
   oracleAdapter: '',
   oracleData: '0x',
-  refiEnabled: false,
-  refiAdapter: '',
-  refiGracePeriod: '',
-  refiMaxLtvBps: '',
-  refiAdapterData: '0x',
   label: '',
   notes: '',
   editableTerms: false
 };
 
+const NOW_SECONDS_BASE = Math.floor(Date.now() / 1000);
+
 export default function RfqBuilder() {
   const { address } = useAccount();
+  const [baseTime] = useState<number>(NOW_SECONDS_BASE);
   const [form, setForm] = useState<FormState>(initialState);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [rfq, setRfq] = useState<RfqRequest | null>(null);
@@ -80,17 +73,12 @@ export default function RfqBuilder() {
   const assets = appConfig.assets;
   const debtTokens = appConfig.debtTokens;
 
-  useEffect(() => {
-    if (address) {
-      setForm((prev) => ({ ...prev, borrower: prev.borrower || address }));
-    }
-  }, [address]);
+  const borrowerValue = form.borrower || address || '';
 
   const expirySeconds = useMemo(() => {
     if (!form.expiryDuration) return '';
-    const now = Math.floor(Date.now() / 1000);
-    return (now + Number(form.expiryDuration)).toString();
-  }, [form.expiryDuration]);
+    return (baseTime + Number(form.expiryDuration)).toString();
+  }, [form.expiryDuration, baseTime]);
 
   const expiryDisplay = useMemo(() => {
     if (!expirySeconds) return 'N/A';
@@ -104,8 +92,7 @@ export default function RfqBuilder() {
   };
 
   const buildRefiData = () => {
-    if (!form.refiEnabled) return '0x';
-    const adapter = (form.refiAdapter || '0x0000000000000000000000000000000000000000') as Address;
+    if (!appConfig.refi?.enabled) return '0x';
     return encodeAbiParameters(
       [
         { type: 'bool', name: 'enabled' },
@@ -116,10 +103,10 @@ export default function RfqBuilder() {
       ],
       [
         true,
-        adapter,
-        BigInt(form.refiGracePeriod || '0'),
-        BigInt(form.refiMaxLtvBps || '0'),
-        normalizeHex(form.refiAdapterData || '0x')
+        appConfig.refi.adapter,
+        BigInt(appConfig.refi.gracePeriod || 0),
+        BigInt(appConfig.refi.maxLtvBps || 0),
+        normalizeHex(appConfig.refi.adapterData || '0x')
       ]
     );
   };
@@ -173,6 +160,8 @@ export default function RfqBuilder() {
   };
 
   useEffect(() => {
+    // Data fetch from API; state updates are intentional here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadRfqsFromApi();
   }, []);
 
@@ -191,7 +180,7 @@ export default function RfqBuilder() {
             <Stack spacing={2}>
               <TextField
                 label="Borrower"
-                value={form.borrower}
+                value={borrowerValue}
                 onChange={handleChange('borrower')}
                 error={Boolean(errors.borrower)}
                 helperText={errors.borrower || 'Defaults to connected wallet'}
@@ -283,50 +272,13 @@ export default function RfqBuilder() {
                 <option value={60 * 60 * 24 * 180}>6 months</option>
                 <option value={60 * 60 * 24 * 365}>1 year</option>
               </TextField>
-              {/* Oracle adapter and data are set from config and hidden from user input */}
-              <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2 }}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between">
-                  <Typography variant="subtitle1">Refinance configuration</Typography>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={form.refiEnabled}
-                        onChange={(e) => setForm((prev) => ({ ...prev, refiEnabled: e.target.checked }))}
-                      />
-                    }
-                    label="Enable refi"
-                  />
-                </Stack>
-                {form.refiEnabled && (
-                  <Stack spacing={2} sx={{ mt: 1 }}>
-                    <TextField
-                      label="Refi adapter"
-                      value={form.refiAdapter}
-                      onChange={handleChange('refiAdapter')}
-                      error={Boolean(errors.refiData)}
-                      helperText={errors.refiData}
-                      fullWidth
-                    />
-                    <TextField
-                      label="Grace period (seconds)"
-                      value={form.refiGracePeriod}
-                      onChange={handleChange('refiGracePeriod')}
-                      fullWidth
-                    />
-                    <TextField
-                      label="Max LTV (bps)"
-                      value={form.refiMaxLtvBps}
-                      onChange={handleChange('refiMaxLtvBps')}
-                      fullWidth
-                    />
-                    <TextField
-                      label="Adapter data (hex)"
-                      value={form.refiAdapterData}
-                      onChange={handleChange('refiAdapterData')}
-                      fullWidth
-                    />
-                  </Stack>
-                )}
+              <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, backgroundColor: '#f8fafc' }}>
+                <Typography variant="subtitle1">Refinance configuration</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {appConfig.refi?.enabled
+                    ? `Refi preset from env: adapter ${appConfig.refi.adapter}, grace ${appConfig.refi.gracePeriod}s, maxLtv ${appConfig.refi.maxLtvBps} bps`
+                    : 'Refinance disabled (set NEXT_PUBLIC_REFI_ENABLED=true to enable)'}
+                </Typography>
               </Box>
               <TextField label="Label (optional)" value={form.label} onChange={handleChange('label')} fullWidth />
               <TextField

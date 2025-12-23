@@ -5,6 +5,11 @@ const rpcUrlEnv = process.env.NEXT_PUBLIC_RPC_URL ?? '';
 const routerAddressEnv = process.env.NEXT_PUBLIC_ROUTER_ADDRESS ?? '';
 const assetsEnv = process.env.NEXT_PUBLIC_ASSETS ?? '';
 const debtTokensEnv = process.env.NEXT_PUBLIC_DEBT_TOKENS ?? '';
+const refiEnabledEnv = process.env.NEXT_PUBLIC_REFI_ENABLED ?? '';
+const refiAdapterEnv = process.env.NEXT_PUBLIC_REFI_ADAPTER ?? '';
+const refiGracePeriodEnv = process.env.NEXT_PUBLIC_REFI_GRACE_PERIOD ?? '';
+const refiMaxLtvEnv = process.env.NEXT_PUBLIC_REFI_MAX_LTV_BPS ?? '';
+const refiAdapterDataEnv = process.env.NEXT_PUBLIC_REFI_ADAPTER_DATA ?? '';
 
 export interface AssetConfig {
   symbol: string;
@@ -16,6 +21,14 @@ export interface AssetConfig {
 export interface DebtTokenConfig {
   symbol: string;
   address: `0x${string}`;
+}
+
+export interface RefiConfig {
+  enabled: boolean;
+  adapter: `0x${string}`;
+  gracePeriod: number;
+  maxLtvBps: number;
+  adapterData: `0x${string}`;
 }
 
 function parseAssets(): AssetConfig[] {
@@ -65,12 +78,29 @@ const fallbackDebtTokens: DebtTokenConfig[] = [
   { symbol: 'USDT', address: '0x0000000000000000000000000000000000000004' }
 ];
 
+function parseRefi(): RefiConfig | null {
+  const enabled = refiEnabledEnv === 'true' || refiEnabledEnv === '1';
+  if (!enabled) return null;
+  if (!refiAdapterEnv?.startsWith('0x')) return null;
+  const gracePeriod = Number(refiGracePeriodEnv || '0');
+  const maxLtvBps = Number(refiMaxLtvEnv || '0');
+  const adapterData = (refiAdapterDataEnv || '0x') as `0x${string}`;
+  return {
+    enabled: true,
+    adapter: refiAdapterEnv as `0x${string}`,
+    gracePeriod: Number.isFinite(gracePeriod) ? gracePeriod : 0,
+    maxLtvBps: Number.isFinite(maxLtvBps) ? maxLtvBps : 0,
+    adapterData
+  };
+}
+
 export const appConfig = {
   chainId: chainIdEnv ? Number(chainIdEnv) : 0,
   rpcUrl: rpcUrlEnv,
   routerAddress: routerAddressEnv as `0x${string}`,
   assets: parseAssets().length ? parseAssets() : fallbackAssets,
-  debtTokens: parseDebtTokens().length ? parseDebtTokens() : fallbackDebtTokens
+  debtTokens: parseDebtTokens().length ? parseDebtTokens() : fallbackDebtTokens,
+  refi: parseRefi()
 };
 
 export const zeroLoansChain = defineChain({

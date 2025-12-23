@@ -15,6 +15,11 @@ NEXT_PUBLIC_ROUTER_ADDRESS=<rfq router address>
 DATABASE_URL=<postgres connection string>
 NEXT_PUBLIC_ASSETS=[{"symbol":"WBTC","debtToken":"...","collateralToken":"...","oracleAdapter":"..."}]
 NEXT_PUBLIC_DEBT_TOKENS=[{"symbol":"USDC","address":"..."}]
+NEXT_PUBLIC_REFI_ENABLED=<true|false>
+NEXT_PUBLIC_REFI_ADAPTER=<refi adapter address>
+NEXT_PUBLIC_REFI_GRACE_PERIOD=<seconds>
+NEXT_PUBLIC_REFI_MAX_LTV_BPS=<bps>
+NEXT_PUBLIC_REFI_ADAPTER_DATA=<hex adapter data>
 ```
 You can copy `.env.example` to `.env` for local development and adjust values.
 

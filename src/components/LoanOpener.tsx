@@ -30,13 +30,14 @@ import { OfferPackage, VaultReceipt } from '../lib/types';
 import { wagmiConfig } from '../lib/wagmi';
 import { fetchQuotes, fetchRfqs } from '../lib/api';
 
+const NOW_SECONDS_BASE = Math.floor(Date.now() / 1000);
+
 export default function LoanOpener() {
   const { address, isConnected } = useAccount();
   const { writeContractAsync, isPending } = useWriteContract();
 
   const [offers, setOffers] = useState<OfferPackage[]>([]);
   const [pkg, setPkg] = useState<OfferPackage | null>(null);
-  const [collateralAmount, setCollateralAmount] = useState<string>('');
   const [info, setInfo] = useState<string>('');
   const [signatureValid, setSignatureValid] = useState<boolean | null>(null);
   const [txHash, setTxHash] = useState<string>('');
@@ -44,6 +45,7 @@ export default function LoanOpener() {
   const [rfqs, setRfqs] = useState<{ rfqId: string; label?: string }[]>([]);
   const [selectedRfqId, setSelectedRfqId] = useState<string>('');
   const [loadingQuotes, setLoadingQuotes] = useState<boolean>(false);
+  const [nowSeconds, setNowSeconds] = useState<number>(() => Math.floor(Date.now() / 1000));
 
   const refreshRfqs = () =>
     fetchRfqs()
@@ -53,14 +55,6 @@ export default function LoanOpener() {
   useEffect(() => {
     refreshRfqs();
   }, []);
-
-  useEffect(() => {
-    if (!pkg) return;
-    setCollateralAmount(pkg.quote.minCollateralAmount);
-    setSignatureValid(null);
-    setTxHash('');
-    setVault('');
-  }, [pkg]);
 
   useEffect(() => {
     const verify = async () => {
@@ -82,6 +76,10 @@ export default function LoanOpener() {
         setSelectedRfqId(rfqId);
         setOffers(data);
         setPkg(null);
+        setSignatureValid(null);
+        setTxHash('');
+        setVault('');
+        setNowSeconds(Math.floor(Date.now() / 1000));
         setInfo('Loaded offers from server.');
       })
       .catch((err) => setInfo((err as Error).message))
@@ -91,6 +89,10 @@ export default function LoanOpener() {
   const handleSelect = (id: string, nonce: string) => {
     const found = offers.find((o) => o.rfqId === id && o.quote.nonce === nonce);
     if (found) {
+      setSignatureValid(null);
+      setTxHash('');
+      setVault('');
+      setNowSeconds(NOW_SECONDS_BASE);
       setPkg(found);
       setInfo('Loaded offer.');
     }
@@ -99,10 +101,9 @@ export default function LoanOpener() {
   const preflightOk = useMemo(() => {
     if (!pkg) return false;
     try {
-      const now = Math.floor(Date.now() / 1000);
       return (
-        Number(pkg.quote.deadline) > now &&
-        Number(pkg.quote.expiry) > now &&
+        Number(pkg.quote.deadline) > nowSeconds &&
+        Number(pkg.quote.expiry) > nowSeconds &&
         hashBytes(pkg.oracleData || '0x') === pkg.quote.oracleDataHash &&
         hashBytes(pkg.refiData || '0x') === pkg.quote.refiConfigHash &&
         isAddress(appConfig.routerAddress || '')
@@ -110,7 +111,7 @@ export default function LoanOpener() {
     } catch {
       return false;
     }
-  }, [pkg]);
+  }, [pkg, nowSeconds]);
 
   const approveCollateral = async () => {
     if (!pkg || !isConnected || !address) {
@@ -122,7 +123,7 @@ export default function LoanOpener() {
         address: pkg.quote.collateralToken as Address,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [appConfig.routerAddress as Address, BigInt(collateralAmount || '0')]
+        args: [appConfig.routerAddress as Address, BigInt(pkg.quote.minCollateralAmount || '0')]
       });
       setInfo(`Approve tx sent: ${hash}`);
     } catch (err) {
@@ -289,7 +290,7 @@ export default function LoanOpener() {
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr' } }}>
           <TextField
             label="Collateral amount"
-            value={pkg?.quote.minCollateralAmount || collateralAmount}
+            value={pkg?.quote.minCollateralAmount || ''}
             disabled
             helperText="Collateral fixed by offer"
             fullWidth

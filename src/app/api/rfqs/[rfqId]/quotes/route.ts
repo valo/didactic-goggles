@@ -40,7 +40,8 @@ const requiredFields: Array<keyof IncomingQuote> = [
   'signature'
 ];
 
-export async function POST(req: NextRequest, { params }: { params: { rfqId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ rfqId: string }> }) {
+  const { rfqId } = await params;
   let body: IncomingQuote;
   try {
     body = (await req.json()) as IncomingQuote;
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: { rfqId: stri
   `;
 
   const values = [
-    params.rfqId,
+    rfqId,
     body.lender,
     body.debtToken,
     body.collateralToken,
@@ -110,11 +111,12 @@ export async function POST(req: NextRequest, { params }: { params: { rfqId: stri
   }
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { rfqId: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ rfqId: string }> }) {
   try {
+    const { rfqId } = await params;
     const result = await pool.query<QuoteRow>(
       'select * from quotes where rfq_id = $1 order by created_at desc limit 200',
-      [params.rfqId]
+      [rfqId]
     );
     return NextResponse.json({ quotes: result.rows }, { status: 200 });
   } catch (err) {
