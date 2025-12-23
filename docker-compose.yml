@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: zero_loans_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zero
+      POSTGRES_PASSWORD: zero
+      POSTGRES_DB: zero_loans
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zero -d zero_loans"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  db_data:

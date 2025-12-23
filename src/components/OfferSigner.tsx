@@ -1,7 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, CardHeader, Divider, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Divider,
+  FormControlLabel,
+  Stack,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography
+} from '@mui/material';
 import { useAccount, useBalance, useSignTypedData, useWriteContract } from 'wagmi';
 import { readContract } from 'wagmi/actions';
 import { Address, isAddress } from 'viem';
@@ -10,9 +28,9 @@ import { rfqRouterAbi } from '../lib/abi/rfqRouter';
 import { appConfig, routerDomain } from '../lib/config';
 import { quoteTypes, hashBytes } from '../lib/crypto';
 import { validateQuoteInput } from '../lib/validation';
-import { loadRfqs, saveOffer } from '../lib/storage';
 import { LoanQuote, OfferPackage, RfqRequest } from '../lib/types';
 import { wagmiConfig } from '../lib/wagmi';
+import { fetchRfqs, saveQuoteToApi } from '../lib/api';
 
 const emptyQuote: LoanQuote = {
   lender: '',
@@ -46,9 +64,18 @@ export default function OfferSigner() {
   const [signedPkg, setSignedPkg] = useState<OfferPackage | null>(null);
   const [callStrike, setCallStrike] = useState<string>('');
   const [putStrike, setPutStrike] = useState<string>('');
+  const [loadingRfqs, setLoadingRfqs] = useState<boolean>(false);
+
+  const loadRfqsFromApi = () => {
+    setLoadingRfqs(true);
+    fetchRfqs()
+      .then((data) => setRfqs(data))
+      .catch((err) => setInfo((err as Error).message))
+      .finally(() => setLoadingRfqs(false));
+  };
 
   useEffect(() => {
-    setRfqs(loadRfqs());
+    loadRfqsFromApi();
   }, []);
 
   useEffect(() => {
@@ -89,14 +116,11 @@ export default function OfferSigner() {
     loadFee();
   }, [rfq, quote.principal]);
 
-  const handleSelectRfq = (rfqId: string) => {
-    const found = rfqs.find((item) => item.rfqId === rfqId);
-    if (found) {
-      setRfq(found);
-      setCallStrike(found.callStrike || '');
-      setPutStrike('');
-      setInfo('Loaded stored RFQ.');
-    }
+  const handleSelectRfq = (selected: RfqRequest) => {
+    setRfq(selected);
+    setCallStrike(selected.callStrike || '');
+    setPutStrike(selected.putStrike || '');
+    setInfo('Loaded RFQ from server.');
   };
 
   const editable = Boolean(rfq?.metadata?.editableTerms);
@@ -197,10 +221,10 @@ export default function OfferSigner() {
         refiData: rfq?.refiData || '0x',
         rfqId: (rfq?.rfqId || '0x') as `0x${string}`
       };
-      saveOffer(pkg);
-      setInfo('Offer signed and saved locally.');
-      setSignedPkg(pkg);
-      await navigator.clipboard.writeText(JSON.stringify(pkg, null, 2));
+      const saved = await saveQuoteToApi(pkg.rfqId, pkg);
+      setInfo('Offer signed and stored on server.');
+      setSignedPkg(saved);
+      await navigator.clipboard.writeText(JSON.stringify(saved, null, 2));
     } catch (err) {
       setInfo((err as Error).message);
     }
@@ -231,22 +255,45 @@ export default function OfferSigner() {
       <CardHeader title="Lender: review RFQ and sign offer" />
       <CardContent>
         <Stack spacing={2}>
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-          <TextField
-            select
-            label="Select stored RFQ"
-            fullWidth
-            value={rfq?.rfqId || ''}
-            onChange={(e) => handleSelectRfq(e.target.value)}
-          >
-            <option value="">-- choose --</option>
-            {rfqs.map((item) => (
-              <option key={item.rfqId} value={item.rfqId}>
-                {item.metadata?.label || item.rfqId}
-              </option>
-            ))}
-          </TextField>
-        </Box>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="subtitle1">Available RFQs</Typography>
+            <Button size="small" onClick={loadRfqsFromApi} disabled={loadingRfqs}>
+              Refresh
+            </Button>
+          </Stack>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Label</TableCell>
+                <TableCell>RFQ ID</TableCell>
+                <TableCell>Borrower</TableCell>
+                <TableCell>Principal</TableCell>
+                <TableCell>Collateral</TableCell>
+                <TableCell>Select</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rfqs.map((item) => (
+                <TableRow key={item.rfqId} hover selected={rfq?.rfqId === item.rfqId}>
+                  <TableCell>{item.metadata?.label || '—'}</TableCell>
+                  <TableCell sx={{ maxWidth: 180, wordBreak: 'break-all' }}>{item.rfqId}</TableCell>
+                  <TableCell>{item.borrower}</TableCell>
+                  <TableCell>{item.principal}</TableCell>
+                  <TableCell>{item.collateralToken}</TableCell>
+                  <TableCell>
+                    <Button size="small" onClick={() => handleSelectRfq(item)}>
+                      Use
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {rfqs.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6}>{loadingRfqs ? 'Loading…' : 'No RFQs found'}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
           {rfq && (
             <Box sx={{ p: 2, border: '1px solid #e2e8f0', borderRadius: 2 }}>
               <Typography variant="subtitle1">RFQ summary</Typography>

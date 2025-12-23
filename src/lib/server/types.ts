@@ -1,0 +1,40 @@
+export type RfqRow = {
+  rfq_id: string;
+  borrower: string;
+  debt_token: string;
+  collateral_token: string;
+  principal: string;
+  repayment_amount: string;
+  min_collateral_amount: string;
+  expiry: string;
+  call_strike: string;
+  put_strike: string;
+  oracle_adapter: string;
+  oracle_data: string;
+  refi_data: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuoteRow = {
+  rfq_id: string;
+  lender: string;
+  debt_token: string;
+  collateral_token: string;
+  principal: string;
+  repayment_amount: string;
+  min_collateral_amount: string;
+  expiry: string;
+  call_strike: string;
+  put_strike: string;
+  oracle_adapter: string;
+  oracle_data_hash: string;
+  oracle_data?: string | null;
+  refi_config_hash: string;
+  refi_data?: string | null;
+  deadline: string;
+  nonce: string;
+  signature: string;
+  created_at: string;
+};

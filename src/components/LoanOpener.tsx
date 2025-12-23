@@ -1,18 +1,34 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, CardHeader, Divider, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Divider,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography
+} from '@mui/material';
 import { Address, isAddress } from 'viem';
 import { useAccount, useWriteContract } from 'wagmi';
-import { readContract, simulateContract, waitForTransactionReceipt } from 'wagmi/actions';
+import { simulateContract, waitForTransactionReceipt } from 'wagmi/actions';
 import { rfqRouterAbi } from '../lib/abi/rfqRouter';
 import { erc20Abi } from '../lib/abi/erc20';
 import { appConfig } from '../lib/config';
 import { hashBytes, verifyQuoteSignature } from '../lib/crypto';
-import { loadOffers, saveReceipt } from '../lib/storage';
+import { saveReceipt } from '../lib/storage';
 import { OfferPackage, VaultReceipt } from '../lib/types';
-import { validateOfferPackage } from '../lib/validation';
 import { wagmiConfig } from '../lib/wagmi';
+import { fetchQuotes, fetchRfqs } from '../lib/api';
 
 export default function LoanOpener() {
   const { address, isConnected } = useAccount();
@@ -25,9 +41,17 @@ export default function LoanOpener() {
   const [signatureValid, setSignatureValid] = useState<boolean | null>(null);
   const [txHash, setTxHash] = useState<string>('');
   const [vault, setVault] = useState<string>('');
+  const [rfqs, setRfqs] = useState<{ rfqId: string; label?: string }[]>([]);
+  const [selectedRfqId, setSelectedRfqId] = useState<string>('');
+  const [loadingQuotes, setLoadingQuotes] = useState<boolean>(false);
+
+  const refreshRfqs = () =>
+    fetchRfqs()
+      .then((data) => setRfqs(data.map((r) => ({ rfqId: r.rfqId!, label: r.metadata?.label }))))
+      .catch((err) => setInfo((err as Error).message));
 
   useEffect(() => {
-    setOffers(loadOffers());
+    refreshRfqs();
   }, []);
 
   useEffect(() => {
@@ -51,18 +75,24 @@ export default function LoanOpener() {
     verify();
   }, [pkg]);
 
-  const handleSelect = (id: string) => {
-    const found = offers.find((o) => o.rfqId === id);
+  const loadQuotesForRfq = (rfqId: string) => {
+    setLoadingQuotes(true);
+    fetchQuotes(rfqId)
+      .then((data) => {
+        setSelectedRfqId(rfqId);
+        setOffers(data);
+        setPkg(null);
+        setInfo('Loaded offers from server.');
+      })
+      .catch((err) => setInfo((err as Error).message))
+      .finally(() => setLoadingQuotes(false));
+  };
+
+  const handleSelect = (id: string, nonce: string) => {
+    const found = offers.find((o) => o.rfqId === id && o.quote.nonce === nonce);
     if (found) {
-      const normalized = {
-        ...found,
-        quote: {
-          ...found.quote,
-          putStrike: found.quote.putStrike || '0'
-        }
-      };
-      setPkg(normalized);
-      setInfo('Loaded stored offer.');
+      setPkg(found);
+      setInfo('Loaded offer.');
     }
   };
 
@@ -165,21 +195,81 @@ export default function LoanOpener() {
     <Card>
       <CardHeader title="Borrower: open loan from signed quote" />
       <CardContent>
-        <TextField
-          select
-          label="Select stored offer"
-          fullWidth
-          value={pkg?.rfqId || ''}
-          onChange={(e) => handleSelect(e.target.value)}
-          SelectProps={{ MenuProps: { disablePortal: true } }}
-        >
-          <MenuItem value="">-- choose --</MenuItem>
-          {offers.map((o) => (
-            <MenuItem key={`${o.rfqId}-${o.quote.nonce}`} value={o.rfqId}>
-              {o.rfqId}
-            </MenuItem>
-          ))}
-        </TextField>
+        <Stack spacing={2}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="subtitle1">RFQs</Typography>
+            <Button size="small" onClick={refreshRfqs}>
+              Refresh
+            </Button>
+          </Stack>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Label</TableCell>
+                <TableCell>RFQ ID</TableCell>
+                <TableCell>Select</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rfqs.map((r) => (
+                <TableRow key={r.rfqId} hover selected={selectedRfqId === r.rfqId}>
+                  <TableCell>{r.label || '—'}</TableCell>
+                  <TableCell sx={{ maxWidth: 180, wordBreak: 'break-all' }}>{r.rfqId}</TableCell>
+                  <TableCell>
+                    <Button size="small" onClick={() => loadQuotesForRfq(r.rfqId)}>
+                      Load offers
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {rfqs.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3}>No RFQs found</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+          <Divider />
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="subtitle1">Offers for RFQ {selectedRfqId || '(select RFQ)'}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {loadingQuotes ? 'Loading…' : ''}
+            </Typography>
+          </Stack>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Lender</TableCell>
+                <TableCell>Principal</TableCell>
+                <TableCell>Deadline</TableCell>
+                <TableCell>Expiry</TableCell>
+                <TableCell>Nonce</TableCell>
+                <TableCell>Select</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {offers.map((o) => (
+                <TableRow key={`${o.rfqId}-${o.quote.nonce}`} hover selected={pkg?.rfqId === o.rfqId && pkg?.quote.nonce === o.quote.nonce}>
+                  <TableCell sx={{ maxWidth: 160, wordBreak: 'break-all' }}>{o.quote.lender}</TableCell>
+                  <TableCell>{o.quote.principal}</TableCell>
+                  <TableCell>{o.quote.deadline}</TableCell>
+                  <TableCell>{o.quote.expiry}</TableCell>
+                  <TableCell>{o.quote.nonce}</TableCell>
+                  <TableCell>
+                    <Button size="small" onClick={() => handleSelect(o.rfqId, o.quote.nonce)}>
+                      Use
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {offers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6}>{loadingQuotes ? 'Loading…' : 'No offers found'}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Stack>
         {pkg && (
           <Box sx={{ mt: 2, p: 2, border: '1px solid #e2e8f0', borderRadius: 2 }}>
             <Typography variant="subtitle1">Offer summary</Typography>

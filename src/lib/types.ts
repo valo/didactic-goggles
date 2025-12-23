@@ -21,6 +21,7 @@ export interface RfqRequest {
   minCollateralAmount: string;
   expiry: string; // unix seconds as string
   callStrike: string; // lender-defined; borrower RFQ may set to 0 as placeholder
+  putStrike?: string;
   oracleAdapter: string;
   oracleData: string;
   refiData: string;

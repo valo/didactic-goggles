@@ -13,6 +13,11 @@ import {
   MenuItem,
   Stack,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
   Typography
 } from '@mui/material';
@@ -21,8 +26,8 @@ import { useAccount } from 'wagmi';
 import { RfqRequest } from '../lib/types';
 import { computeRfqId, ensure0x, hashBytes, normalizeHex } from '../lib/crypto';
 import { validateRfq } from '../lib/validation';
-import { saveRfq } from '../lib/storage';
 import { appConfig, AssetConfig, DebtTokenConfig } from '../lib/config';
+import { fetchRfqs, saveRfqToApi } from '../lib/api';
 
 interface FormState {
   borrower: string;
@@ -70,6 +75,8 @@ export default function RfqBuilder() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [rfq, setRfq] = useState<RfqRequest | null>(null);
   const [message, setMessage] = useState<string>('');
+  const [rfqs, setRfqs] = useState<RfqRequest[]>([]);
+  const [loadingRfqs, setLoadingRfqs] = useState<boolean>(false);
   const assets = appConfig.assets;
   const debtTokens = appConfig.debtTokens;
 
@@ -145,13 +152,29 @@ export default function RfqBuilder() {
       const rfqId = computeRfqId({ ...rfqPayload, oracleDataHash, refiConfigHash });
       const fullRfq: RfqRequest = { ...rfqPayload, oracleDataHash, refiConfigHash, rfqId };
       setErrors({});
-      setRfq(fullRfq);
-      setMessage('RFQ created and saved locally.');
-      saveRfq(fullRfq);
+      saveRfqToApi(fullRfq)
+        .then((saved) => {
+          setRfq(saved);
+          setMessage('RFQ saved to server.');
+          setRfqs((prev) => [saved, ...prev.filter((r) => r.rfqId !== saved.rfqId)]);
+        })
+        .catch((err) => setMessage((err as Error).message));
     } catch (err) {
       setMessage((err as Error).message);
     }
   };
+
+  const loadRfqsFromApi = () => {
+    setLoadingRfqs(true);
+    fetchRfqs()
+      .then((data) => setRfqs(data))
+      .catch((err) => setMessage((err as Error).message))
+      .finally(() => setLoadingRfqs(false));
+  };
+
+  useEffect(() => {
+    loadRfqsFromApi();
+  }, []);
 
   return (
     <Card>
@@ -358,6 +381,42 @@ export default function RfqBuilder() {
             </Stack>
           </Box>
         )}
+        <Divider sx={{ my: 3 }} />
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+          <Typography variant="subtitle1">Available RFQs (server)</Typography>
+          <Button size="small" onClick={loadRfqsFromApi} disabled={loadingRfqs}>
+            Refresh
+          </Button>
+        </Stack>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Label</TableCell>
+              <TableCell>RFQ ID</TableCell>
+              <TableCell>Borrower</TableCell>
+              <TableCell>Principal</TableCell>
+              <TableCell>Collateral</TableCell>
+              <TableCell>Expiry</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rfqs.map((row) => (
+              <TableRow key={row.rfqId || row.oracleDataHash} hover>
+                <TableCell>{row.metadata?.label || '—'}</TableCell>
+                <TableCell sx={{ maxWidth: 200, wordBreak: 'break-all' }}>{row.rfqId}</TableCell>
+                <TableCell>{row.borrower}</TableCell>
+                <TableCell>{row.principal}</TableCell>
+                <TableCell>{row.collateralToken}</TableCell>
+                <TableCell>{row.expiry}</TableCell>
+              </TableRow>
+            ))}
+            {rfqs.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6}>{loadingRfqs ? 'Loading…' : 'No RFQs found'}</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   );
