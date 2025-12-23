@@ -284,11 +284,11 @@ export default function RfqBuilder() {
                 <option value={60 * 60 * 24 * 365}>1 year</option>
               </TextField>
               {/* Oracle adapter and data are set from config and hidden from user input */}
-            <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2 }}>
-              <Stack direction="row" alignItems="center" justifyContent="space-between">
-                <Typography variant="subtitle1">Refinance configuration</Typography>
-                <FormControlLabel
-                  control={
+              <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2 }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Typography variant="subtitle1">Refinance configuration</Typography>
+                  <FormControlLabel
+                    control={
                       <Switch
                         checked={form.refiEnabled}
                         onChange={(e) => setForm((prev) => ({ ...prev, refiEnabled: e.target.checked }))}
@@ -353,7 +353,7 @@ export default function RfqBuilder() {
         <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
           <Stack direction="row" spacing={2}>
             <Button variant="contained" onClick={handleGenerate}>
-              Generate RFQ JSON
+              Create RFQ
             </Button>
             <Button variant="outlined" onClick={() => setForm(initialState)}>
               Reset

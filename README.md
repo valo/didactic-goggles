@@ -35,6 +35,12 @@ pnpm build
 pnpm start
 ```
 
+## Database migrations
+- SQL migrations live in `migrations/`.
+- Apply pending migrations: `pnpm db:migrate`
+- Show status: `pnpm db:migrate:status`
+- Uses `DATABASE_URL` to connect to Postgres.
+
 ## Docker
 - Build image:
   ```
