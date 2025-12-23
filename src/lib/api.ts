@@ -22,7 +22,8 @@ function mapRfq(row: any): RfqRequest {
     metadata: row.metadata ?? undefined,
     oracleDataHash: row.oracle_data_hash ?? undefined,
     refiConfigHash: row.refi_config_hash ?? undefined,
-    rfqId: row.rfq_id
+    rfqId: row.rfq_id,
+    rfqSignature: row.borrower_signature ?? undefined
   };
 }
 

@@ -15,6 +15,7 @@ export type RfqRow = {
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+  borrower_signature: string | null;
 };
 
 export type QuoteRow = {

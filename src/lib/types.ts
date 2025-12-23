@@ -29,6 +29,7 @@ export interface RfqRequest {
   oracleDataHash?: string;
   refiConfigHash?: string;
   rfqId?: string;
+  rfqSignature?: string;
   attestation?: {
     signer: string;
     signature: string;

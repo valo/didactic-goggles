@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createPublicClient, http, verifyMessage } from 'viem';
+import { parseAbi } from 'viem';
 import { pool } from '@/lib/server/db';
 import type { RfqRow } from '@/lib/server/types';
 
@@ -17,6 +19,7 @@ type IncomingRfq = {
   oracleData: string;
   refiData: string;
   metadata?: Record<string, unknown>;
+  rfqSignature: string;
 };
 
 const requiredFields: Array<keyof IncomingRfq> = [
@@ -32,8 +35,20 @@ const requiredFields: Array<keyof IncomingRfq> = [
   'putStrike',
   'oracleAdapter',
   'oracleData',
-  'refiData'
+  'refiData',
+  'rfqSignature'
 ];
+
+const RPC_URL = process.env.API_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || '';
+const MAX_RFQS_PER_BORROWER = Number(process.env.RFQ_MAX_OPEN_PER_BORROWER || '5');
+const erc20Abi = parseAbi(['function balanceOf(address) view returns (uint256)']);
+
+function publicClient() {
+  if (!RPC_URL) {
+    throw new Error('API_RPC_URL or NEXT_PUBLIC_RPC_URL is required for collateral checks');
+  }
+  return createPublicClient({ transport: http(RPC_URL) });
+}
 
 export async function POST(req: NextRequest) {
   let body: IncomingRfq;
@@ -46,6 +61,57 @@ export async function POST(req: NextRequest) {
   const missing = requiredFields.filter((f) => !body[f]);
   if (missing.length) {
     return NextResponse.json({ error: `Missing fields: ${missing.join(', ')}` }, { status: 400 });
+  }
+
+  if (!RPC_URL) {
+    return NextResponse.json({ error: 'RPC URL not configured on server' }, { status: 500 });
+  }
+
+  // Signature over rfqId (bytes32) using personal_sign
+  try {
+    const validSig = await verifyMessage({
+      address: body.borrower as `0x${string}`,
+      message: body.rfqId,
+      signature: body.rfqSignature as `0x${string}`
+    });
+    if (!validSig) {
+      return NextResponse.json({ error: 'Invalid borrower signature' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid borrower signature' }, { status: 400 });
+  }
+
+  // Collateral balance check
+  try {
+    const client = publicClient();
+    const balance = await client.readContract({
+      address: body.collateralToken as `0x${string}`,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [body.borrower as `0x${string}`]
+    });
+    if (balance < BigInt(body.minCollateralAmount)) {
+      return NextResponse.json({ error: 'Insufficient collateral balance' }, { status: 400 });
+    }
+  } catch (err) {
+    console.error('collateral check error', err);
+    return NextResponse.json({ error: 'Failed to verify collateral balance' }, { status: 500 });
+  }
+
+  // Max open RFQs per borrower
+  try {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const countRes = await pool.query<{ count: string }>(
+      'select count(*)::int as count from rfqs where borrower = $1 and expiry::bigint > $2',
+      [body.borrower, nowSec]
+    );
+    const count = Number(countRes.rows[0]?.count || 0);
+    if (count >= MAX_RFQS_PER_BORROWER) {
+      return NextResponse.json({ error: 'RFQ limit reached for borrower' }, { status: 400 });
+    }
+  } catch (err) {
+    console.error('rfq limit error', err);
+    return NextResponse.json({ error: 'Failed to enforce RFQ limit' }, { status: 500 });
   }
 
   const text = `
@@ -63,10 +129,11 @@ export async function POST(req: NextRequest) {
       oracle_adapter,
       oracle_data,
       refi_data,
-      metadata
+      metadata,
+      borrower_signature
     )
     values (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
     )
     on conflict (rfq_id) do update set
       borrower = excluded.borrower,
@@ -82,6 +149,7 @@ export async function POST(req: NextRequest) {
       oracle_data = excluded.oracle_data,
       refi_data = excluded.refi_data,
       metadata = excluded.metadata,
+      borrower_signature = excluded.borrower_signature,
       updated_at = now()
     returning *;
   `;
@@ -100,7 +168,8 @@ export async function POST(req: NextRequest) {
     body.oracleAdapter,
     body.oracleData,
     body.refiData,
-    body.metadata ?? null
+    body.metadata ?? null,
+    body.rfqSignature
   ];
 
   try {

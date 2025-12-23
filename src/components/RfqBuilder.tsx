@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -22,7 +22,7 @@ import {
   Typography
 } from '@mui/material';
 import { Address, encodeAbiParameters } from 'viem';
-import { useAccount } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import { RfqRequest } from '../lib/types';
 import { computeRfqId, ensure0x, hashBytes, normalizeHex } from '../lib/crypto';
 import { validateRfq } from '../lib/validation';
@@ -63,6 +63,7 @@ const NOW_SECONDS_BASE = Math.floor(Date.now() / 1000);
 
 export default function RfqBuilder() {
   const { address } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [baseTime] = useState<number>(NOW_SECONDS_BASE);
   const [form, setForm] = useState<FormState>(initialState);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -139,7 +140,12 @@ export default function RfqBuilder() {
       const rfqId = computeRfqId({ ...rfqPayload, oracleDataHash, refiConfigHash });
       const fullRfq: RfqRequest = { ...rfqPayload, oracleDataHash, refiConfigHash, rfqId };
       setErrors({});
-      saveRfqToApi(fullRfq)
+      if (!address) {
+        setMessage('Connect wallet to sign RFQ.');
+        return;
+      }
+      signMessageAsync({ message: rfqId as `0x${string}` })
+        .then((sig) => saveRfqToApi({ ...fullRfq, rfqSignature: sig }))
         .then((saved) => {
           setRfq(saved);
           setMessage('RFQ saved to server.');
